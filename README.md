@@ -1,1 +1,1 @@
-# distrubuted-kv-store
+A Distrubuted Key Value Store using in-memory hash table and raft
