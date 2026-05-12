@@ -48,7 +48,9 @@ func (srv *Server) Start() error {
 }
 
 func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("healthy"))
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "ok",
+	})
 }
 
 func (srv *Server) handleGet(w http.ResponseWriter, r *http.Request) {
