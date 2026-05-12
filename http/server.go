@@ -11,6 +11,8 @@ type store interface {
 	Get(key string) (string, error)
 	Set(key, value string) error
 	Delete(key string) error
+	Status() (st.StoreStatus, error)
+	Join(nodeID, raftAddr string) error
 }
 
 type Server struct {
@@ -36,6 +38,8 @@ func (srv *Server) routes() {
 	srv.mux.HandleFunc("POST /key", srv.handleSet)
 	srv.mux.HandleFunc("DELETE /key/{key}", srv.handleDelete)
 	srv.mux.HandleFunc("GET /health", srv.handleHealth)
+	srv.mux.HandleFunc("GET /status", srv.handleStatus)
+	srv.mux.HandleFunc("POST /join", srv.handleJoin)
 }
 
 func (srv *Server) Start() error {
@@ -51,6 +55,15 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
 	})
+}
+
+func (srv *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	status, err := srv.Store.Status()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(status)
 }
 
 func (srv *Server) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +109,30 @@ func (srv *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 
 	if err := srv.Store.Delete(key); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (srv *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		NodeID   string `json:"nodeID"`
+		RaftAddr string `json:"raftAddr"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if body.NodeID == "" || body.RaftAddr == "" {
+		http.Error(w, "nodeID and raftAddr are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := srv.Store.Join(body.NodeID, body.RaftAddr); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
