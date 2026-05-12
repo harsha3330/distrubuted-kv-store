@@ -32,8 +32,10 @@ func NewServer(httpAddr string) *Server {
 }
 
 func (srv *Server) routes() {
-	srv.mux.HandleFunc("/key", srv.handleKey)
-	srv.mux.HandleFunc("/health", srv.handleHealth)
+	srv.mux.HandleFunc("GET /key/{key}", srv.handleGet)
+	srv.mux.HandleFunc("POST /key", srv.handleSet)
+	srv.mux.HandleFunc("DELETE /key/{key}", srv.handleDelete)
+	srv.mux.HandleFunc("GET /health", srv.handleHealth)
 }
 
 func (srv *Server) Start() error {
@@ -49,46 +51,52 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("healthy"))
 }
 
-func (srv *Server) handleKey(w http.ResponseWriter, r *http.Request) {
-	key := r.URL.Query().Get("key")
+func (srv *Server) handleGet(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
 
-	switch r.Method {
-
-	case http.MethodGet:
-		val, err := srv.Store.Get(key)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-
-		json.NewEncoder(w).Encode(map[string]string{
-			"key":   key,
-			"value": val,
-		})
-
-	case http.MethodPost:
-
-		value := r.URL.Query().Get("value")
-
-		err := srv.Store.Set(key, value)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusCreated)
-
-	case http.MethodDelete:
-
-		err := srv.Store.Delete(key)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	val, err := srv.Store.Get(key)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
 	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"key":   key,
+		"value": val,
+	})
+}
+
+func (srv *Server) handleSet(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if body.Key == "" {
+		http.Error(w, "key is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := srv.Store.Set(body.Key, body.Value); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (srv *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+
+	if err := srv.Store.Delete(key); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
